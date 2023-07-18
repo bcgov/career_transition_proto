@@ -10,14 +10,9 @@ career_transition_proto
 
 ### Usage
 
-Describe data being used (links), and how to run. Eg:
+Do the following:
 
-There are four core scripts that are required for the analysis, they need to be run in order:
-
--   01\_clean.R
--   02\_analysis.R
--   03\_visualize.R
--   04\_output.R
+source file 01_process.R (gets data into usable form)
 
 #### Example
 
