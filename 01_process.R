@@ -9,7 +9,7 @@ read_data <- function(file_name){
     clean_names()%>%
     select(o_net_soc_code, element_name, scale_name, data_value)%>%
     pivot_wider(names_from = scale_name, values_from = data_value)%>%
-    mutate(score=sqrt(Importance)*sqrt(Level), #geometric mean of importance and level
+    mutate(score=sqrt(Importance*Level), #geometric mean of importance and level
            category=(str_split(file_name,"\\.")[[1]][1]))%>%
     unite(element_name, category, element_name, sep=": ")%>%
     select(-Importance, -Level)
@@ -18,12 +18,14 @@ read_ete <- function(file_name){
   read_excel(here("raw_data", "onet", file_name))%>%
     clean_names()%>%
     select(o_net_soc_code, element_name, category, data_value)%>%
-    filter(!element_name %in% c("Job-Related Professional Certification", "Apprenticeship"))%>%
+    filter(element_name %in% c("Required Level of Education", "Related Work Experience"))%>%
     mutate(catval=category*data_value/100)%>% #apply weights to categories
     group_by(o_net_soc_code, element_name)%>%
     summarize(score=sum(catval, na.rm = TRUE))%>% #weighted mean
-    mutate(element_name=paste("Educ. Train. Exper.",element_name, sep=": "))
-}
+    mutate(element_name=if_else(element_name == "Required Level of Education",
+                                paste("Education", element_name, sep=": "),
+                                paste("Experience", element_name, sep=": ")))
+           }
 
 # the program------------------------
 mapping <- read_excel(here("mapping", "onet2019_soc2018_noc2016_noc2021_crosswalk.xlsx"))%>%

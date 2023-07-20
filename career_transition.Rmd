@@ -1,9 +1,12 @@
 ---
 title: "Career Transition Tool"
-output: 
+output:
   flexdashboard::flex_dashboard:
     orientation: rows
 runtime: shiny
+resource_files:
+- processed_data/jow.csv
+- processed_data/scaled_characteristics_noc.csv
 ---
 
 ```{r}
@@ -13,25 +16,36 @@ library(here)
 #functions-----------------------
 make_plot <- function(noc, wage, job_openings, tbbl){
   temp <- tbbl%>%
-    rename(Category=category)%>%
-    group_by(Category)%>% #renaming
-    mutate(Subcategory=fct_reorder(subcategory, `Attribute Deficit`))
-  plt <- ggplot(temp, aes(`Attribute Deficit`, Subcategory, fill=Category))+
+    group_by(category)%>% 
+    mutate(all_category=fct_reorder(all_category, `Need for improvement`))
+ 
+  ggplot(temp, aes(all_category, 
+                          `Need for improvement`, 
+                          fill=category,
+                          text=subcategory))+
     geom_col()+
-    labs(x="Need for improvement",
-         y="",
+    labs(y="Need for improvement",
+         x="",
          fill="")+
-    coord_cartesian(xlim = c(0, 5))+ 
+    scale_y_continuous(limits = c(-2, 4), labels = NULL)+
     scale_fill_brewer(palette = "Dark2")+
-    scale_y_discrete(labels = NULL)+
-    theme_minimal()
-  plt <- plotly::ggplotly(plt)%>% 
+    scale_x_discrete(labels = NULL)+
+    theme_minimal()+ 
+    theme(legend.position="bottom")+ 
+    theme(legend.text=element_text(size=20))+
+    theme(legend.spacing.x = unit(1, 'cm'))
+}
+
+make_plotly <- function(noc, wage, job_openings, plt){ 
+  plt <- plotly::ggplotly(plt, tooltip = "text")%>% 
     plotly::config(displayModeBar = F)%>%
     plotly::layout(font= list(size=9),
-      title = list(text = paste0(noc,
+      title = list(text = paste0(str_sub(noc,8,-1),
                                     '<br>',
                                     '<sup>',
-                                    'Average Wage: ',
+                                    'NOC: ',
+                                    str_sub(noc,1,5),
+                                    '         Average Wage: ',
                                     scales::dollar(wage),
                                     '         Job Openings: ',
                                     scales::comma(job_openings),
@@ -43,21 +57,24 @@ jow <- vroom(here("processed_data","jow.csv"))
 tbbl <- vroom(here("processed_data","scaled_characteristics_noc.csv"))%>%
   column_to_rownames(var="noc")
 pca <- prcomp(tbbl)
-first_pca <- pca[["x"]][,1:10]%>% #keep only the first 10 principal components.
+first_pca <- pca[["x"]][,1:5]%>% #keep only the first 5 principal components.
     as.data.frame()
 ```
 
 Inputs{.sidebar data-width=300}
 -------------------------------------
 
-* When you choose an occupation from the list below, this app finds the 6 closest occupations.
-* Closeness is based on 165 attributes from 5 categories: 
-    - Work activities 
-    - Skills 
-    - Knowledge 
-    - Education/Experience/Training
+* When you choose an occupation from the list below, this app finds the 9 closest occupations.
+* Closeness is based on 165 attributes from 6 categories:
     - Abilities
+    - Education
+    - Experience
+    - Knowledge
+    - Skills
+    - Work activities 
 * The plots show the attributes most in need of improvement in order to switch occupations.
+* Mouse over the plot to identify the attributes.
+* Blank plots indicate an exact match to chosen occupation.
 * The average wage rate and job openings for each occupation are also provided.
 
 
@@ -73,55 +90,76 @@ selectInput(
 ```
 
 ```{r}
-q <- first_pca[rownames(first_pca)=="41401: Economists and economic policy researchers and analysts",] #the location of the chosen NOC in 10D space.
-temp <- dbscan::kNN(first_pca, k = 7, sort=TRUE,  query = q) #7 nearest neighbors to query (own NOC included)
-nn <-  rownames(first_pca)[as.vector(temp[["id"]])] #the names of the closest occupations
-chosen_noc <- tbbl[rownames(tbbl)=="41401: Economists and economic policy researchers and analysts",] #the skill profile of the chosen NOC (35D)
-
-seven_chosen <- chosen_noc[rep(1, 7), ] #replicate the skill profile of the chosen NOC
-temp <- tbbl[rownames(tbbl) %in% nn, ] #the nearest neighbour NOCs to the chosen NOC
-closest <-   temp[nn, ] #orders the dataframe correctly
-
-difference <- (closest-seven_chosen)%>% #the difference in skills
+#reactive elements----------------
+q <- reactive({
+  first_pca[rownames(first_pca)==input$noc,] #the location of the chosen NOC in 10D space.
+})
+temp <- reactive({
+  dbscan::kNN(first_pca, k = 10, sort=TRUE,  query = q()) #10 nearest neighbors to query (own NOC included)
+})
+nn <-  reactive({
+  rownames(first_pca)[as.vector(temp()[["id"]])] #the names of the closest occupations
+})
+chosen_noc <- reactive({
+  tbbl[rownames(tbbl)==input$noc,] #the skill profile of the chosen NOC (35D)
+})
+repeated_chosen <- reactive({
+  chosen_noc()[rep(1, 10), ] #replicate the skill profile of the chosen NOC
+})
+closest <- reactive({
+  tbbl[rownames(tbbl) %in% nn(), ] #the nearest neighbour NOCs to the chosen NOC
+})
+wrong_order_difference <- reactive({
+  (closest()-repeated_chosen())%>% #the difference in skills
   mutate(across(everything(), \(x) round(x, 2)))%>%
   rownames_to_column(var="noc")%>%
-  pivot_longer(cols=-noc, names_to = "all_category", values_to = "Attribute Deficit")%>%
+  pivot_longer(cols=-noc, names_to = "all_category", values_to = "Need for improvement")%>%
   mutate(temp=all_category)%>%
   separate(temp, into = c("category","subcategory"), sep=": ")%>%
-  filter(noc!="41401: Economists and economic policy researchers and analysts")%>%
+  filter(noc!=input$noc)%>%
   group_by(noc, category)%>%
-  slice_max(order_by = `Attribute Deficit`, n = 5)%>%
-  filter(`Attribute Deficit`>0)%>%
+  slice_max(order_by = `Need for improvement`, n = 5, with_ties=FALSE)%>%
   group_by(noc)%>%
-  nest()
-
-difference <- difference%>%
+  nest()%>%
   inner_join(jow)%>%
-  mutate(plot=pmap(list(noc, wage, job_openings, data), make_plot))
+  mutate(plot=pmap(list(noc, wage, job_openings, data), make_plot),
+         plotly=pmap(list(noc, wage, job_openings, plot), make_plotly)
+         )
+})
+#order the dataframe correctly
+
+difference <- reactive({
+  wrong_order_difference()[match(nn(), wrong_order_difference()$noc), ]%>%
+  na.omit()
+})
 ```
 
-
- 
 Row
 -------------------------------------
     
 ### 
     
 ```{r}
-difference[["plot"]][[1]]
+plotly::renderPlotly({
+  difference()[["plotly"]][[1]]
+}) 
 ```
     
 ### 
 
 ```{r}
-difference[["plot"]][[2]]
+plotly::renderPlotly({
+  difference()[["plotly"]][[2]]
+})
 ```
 
 
 ### 
     
 ```{r}
-difference[["plot"]][[3]]
+plotly::renderPlotly({
+  difference()[["plotly"]][[3]]
+})
 ```
  
 Row
@@ -130,22 +168,65 @@ Row
 ### 
 
 ```{r}
-difference[["plot"]][[4]]
+plotly::renderPlotly({
+  difference()[["plotly"]][[4]]
+})
 ```
 
     
 ### 
     
 ```{r}
-difference[["plot"]][[5]]
+plotly::renderPlotly({
+  difference()[["plotly"]][[5]]
+})
 ```
     
 ### 
 
 ```{r}
-difference[["plot"]][[6]]
+plotly::renderPlotly({
+  difference()[["plotly"]][[6]]
+})
 ```
 
+Row
+------------------------------------- 
+ 
+### 
 
+```{r}
+plotly::renderPlotly({
+  difference()[["plotly"]][[7]]
+})
+```
+
+    
+### 
+    
+```{r}
+plotly::renderPlotly({
+  difference()[["plotly"]][[8]]
+})
+```
+    
+### 
+
+```{r}
+plotly::renderPlotly({
+  difference()[["plotly"]][[9]]
+})
+```
+
+Row {data-height=100} 
+------------------------------------- 
+ 
+### 
+
+```{r, fig.retina=3}
+renderPlot({
+  ggpubr::as_ggplot(ggpubr::get_legend(difference()[["plot"]][[1]]))
+})
+```
 
 
