@@ -84,6 +84,7 @@ jo_plot <- function(num){
                                     ))) +
     geom_line()+
     theme_minimal()+
+    scale_colour_brewer(palette = "Dark2")+
     theme(legend.position='none')+
     labs(y="",
          x="",
@@ -162,7 +163,7 @@ renderUI({
 ### Notes:
 
 * A blank plot in the top left indicates a perfect match between the origin and destination occupations in terms of abilities, knowledge, skills and work activities.
-* The top fields of study are not available for 11 NOCs, so the bottom left table will be empty.
+* The top fields of study are not available for 11 occupations.
 
 
 
