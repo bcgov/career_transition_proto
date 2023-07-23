@@ -7,6 +7,7 @@ resource_files:
 - processed_data/job_openings.csv
 - processed_data/wages.csv
 - processed_data/scaled_characteristics_noc.csv
+- processed_data/teer_description.csv
 ---
 
 ```{r}
@@ -33,7 +34,7 @@ make_plot <- function(tbbl){
     labs(y="Need for improvement",
          x="",
          fill="")+
-    scale_y_continuous(limits = c(0, 6), labels = NULL)+
+    scale_y_continuous(limits = c(0, NA), labels = NULL)+
     scale_x_discrete(labels  = NULL) +
     scale_fill_brewer(palette = "Dark2")+
     theme_minimal()
@@ -43,9 +44,9 @@ make_plotly <- function(plt){
   plotly::ggplotly(plt, tooltip = "text")%>% 
     plotly::config(displayModeBar = F)
 }
-wage_plot <- function(num){
+wage_plot <- function(){
   wages%>%
-    filter(noc %in% c(input$noc, difference()$noc[num]))%>%
+    filter(noc %in% c(input$noc, input$destination))%>%
     ggplot(mapping = aes(y=noc, 
                          x = median_wage,
                          text=paste("The typical hourly wage is", 
@@ -66,7 +67,7 @@ wage_plot <- function(num){
 }
 jo_plot <- function(num){
   job_openings%>%
-    filter(noc %in% c(input$noc, difference()$noc[num]))%>%
+    filter(noc %in% c(input$noc, input$destination))%>%
     group_by(noc)%>%
     mutate(sum_jo=sum(job_openings))%>%
     ggplot(mapping = aes(year, 
@@ -90,7 +91,7 @@ jo_plot <- function(num){
     theme(text = element_text(size = 17))
 }
 
-fos_table <- function(num){
+fos_table <- function(){
   origin <- cip_noc_top5%>%
   filter(noc ==input$noc)%>%
   ungroup()%>%
@@ -98,13 +99,22 @@ fos_table <- function(num){
   pull()
 
 destination <- cip_noc_top5%>%
-  filter(noc == difference()$noc[num])%>%
+  filter(noc == input$destination)%>%
   ungroup()%>%
   select(`Field of Study`)%>%
   pull()
 
-tibble("{input$noc}":=origin,
-       "{difference()$noc[num]}":=destination)%>%
+if(length(origin)==5 & length(destination)==5){
+  fos_table <- tibble("{input$noc}":=origin, "{input$destination}":=destination)
+}else if(length(origin)==5){
+  fos_table <- tibble("{input$noc}":=origin)
+}else if(length(destination)==5){
+  fos_table <- tibble("{input$destination}":=destination)
+}else{
+  fos_table <- tibble(sorry="no data")
+}
+
+fos_table%>%
   DT::datatable(rownames = FALSE, options=list(dom='t'))
 }
 
@@ -123,7 +133,7 @@ first_pca <- pca[["x"]][,1:5]%>% #keep only the first 5 principal components.
 ```
 
 Sidebar {.sidebar}
-=====================================
+---------------------------------------------
 
 * Choosing an origin occupation in the first dropdown box populates the second dropdown box with ten closest destination occupations.
 * Closeness is based on 161 attributes from 4 categories:
@@ -140,7 +150,21 @@ selectInput(
   selected = "41401: Economists and economic policy researchers and analysts",
   multiple = FALSE
 )
+renderUI({
+  selectInput('destination', 
+              'Choose a destination occupation:', 
+              difference()$noc, 
+              multiple=FALSE
+              )
+})
 ```
+
+### Notes:
+
+* A blank plot in the top left indicates a perfect match between the origin and destination occupations in terms of abilities, knowledge, skills and work activities.
+* The top fields of study are not available for 11 NOCs, so the bottom left table will be empty.
+
+
 
 ```{r}
 #reactive elements----------------
@@ -152,6 +176,12 @@ temp <- reactive({
 })
 nn <-  reactive({
   rownames(first_pca)[as.vector(temp()[["id"]])] #the names of the closest occupations
+})
+distance <- reactive({
+  dist <- tibble(noc=nn(), distance=round(as.vector(temp()[["dist"]]),2))%>%
+    filter(noc==input$destination)%>%
+    pull(distance)
+  dist[[1]]
 })
 chosen_noc <- reactive({
   tbbl[rownames(tbbl)==input$noc,] #the skill profile of the chosen NOC (35D)
@@ -186,19 +216,18 @@ difference <- reactive({
 #the pages--------------
 ```
 
-
-`r renderUI({paste0(word(str_split_1(difference()$noc[[1]], ":")[2],2),"...")})`
-=====================================  
-
 Column 
 -------------------------------------
     
-### **`r renderUI({str_split_1(difference()$noc[[1]], ":")[2]})`**
+### **`r renderUI({paste0(input$destination, ", Distance = ", distance())})`**
     
 
 ```{r}
 plotly::renderPlotly({
-  difference()[["plotly"]][[1]]
+  lst <- difference()%>%
+    filter(noc==input$destination)%>%
+    pull(plotly)
+  lst[[1]]
 }) 
 ```
 
@@ -214,7 +243,7 @@ DT::renderDT({
 
 ```{r}
 DT::renderDT({
-  teer_table(difference()$noc[1])
+  teer_table(input$destination)
 })
 ```
 
@@ -226,7 +255,7 @@ Column
 
 ```{r, fig.retina=3}
 plotly::renderPlotly({
-  make_plotly(wage_plot(1))
+  make_plotly(wage_plot())
 })
 ```   
  
@@ -234,7 +263,7 @@ plotly::renderPlotly({
     
 ```{r, fig.retina=3}
 plotly::renderPlotly({
-  make_plotly(jo_plot(1))
+  make_plotly(jo_plot())
 })
 ```
 
@@ -242,7 +271,7 @@ plotly::renderPlotly({
 
 ```{r}
 DT::renderDT({
-  fos_table(1)
+  fos_table()
 })
 
 ```

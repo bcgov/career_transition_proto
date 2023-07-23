@@ -80,9 +80,14 @@ job_openings <- crossing(nocs, year)%>%
 cip_noc <- vroom::vroom(here("raw_data","stats_can", "cip_noc.csv"), skip= 13, n_max = 436)
 colnames(cip_noc)[1] <- "Field of Study"
 cip_noc <- cip_noc[-1,]
-cip_noc_top5 <- cip_noc%>%
+
+cip_long <- cip_noc%>%
   select(!contains("..."))%>%
-  pivot_longer(cols=-"Field of Study", names_to="noc", values_to = "count")%>%
+  pivot_longer(cols=-"Field of Study", names_to="noc", values_to = "count")
+#how many nocs do we have field of study info for?
+length(unique(cip_long$noc))
+
+cip_noc_top5 <- cip_long%>%
   mutate(count=as.numeric(str_replace_all(count,",","")),
          `Field of Study`=str_sub(`Field of Study`, 7,-1),
          noc=str_sub(noc,1,5)
@@ -96,11 +101,17 @@ cip_noc_top5 <- cip_noc%>%
 
 correct_names <- nocs%>%
   mutate(dup = noc)%>%
-  separate(dup, into=c("code","description"), sep=":")%>%
+  separate(dup, into=c("code", "description"), sep=":")%>%
   select(-description)%>%
   rename(noc_full=noc,
          noc=code)
 
+#nocs that are missing typical education------------------
+full_join(cip_noc_top5, correct_names, by = join_by(noc))%>%
+  filter(is.na(noc_full))%>%
+  distinct(noc)
+
+#renaming to match the mapping file names
 inner_join(cip_noc_top5, correct_names, by = join_by(noc))%>%
   ungroup()%>%
   select(-noc)%>%
