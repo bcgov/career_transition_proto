@@ -99,32 +99,31 @@ jo_plot <- function(num){
          colour="")+ 
     theme(text = element_text(size = 17))
 }
+get_fos <- function(noc_code){
+  cip_noc_top5%>%
+  filter(noc == noc_code)%>%
+  ungroup()%>%
+  select(`Field of Study`)%>%
+  pull()
+}
 
 fos_table <- function(){
-  origin <- cip_noc_top5%>%
-  filter(noc ==input$noc)%>%
-  ungroup()%>%
-  select(`Field of Study`)%>%
-  pull()
-destination <- cip_noc_top5%>%
-  filter(noc == input$destination)%>%
-  ungroup()%>%
-  select(`Field of Study`)%>%
-  pull()
-if(length(origin)==5 & length(destination)==5){
-  fos_table <- tibble("{input$noc}":=origin, "{input$destination}":=destination)
-}else if(length(origin)==5){
-  fos_table <- tibble("{input$noc}":=origin)
-}else if(length(destination)==5){
-  fos_table <- tibble("{input$destination}":=destination)
-}else{
-  fos_table <- tibble(sorry="no data")
-}
-fos_table%>%
-  DT::datatable(rownames = FALSE, options=list(dom='t'))
+  origin <- get_fos(input$noc)
+  destination <- get_fos(input$destination)
+  if(length(origin)==5 & length(destination)==5){
+    fos_table <- tibble("{input$noc}":=origin, "{input$destination}":=destination)
+  }else if(length(origin)==5){
+    fos_table <- tibble("{input$noc}":=origin)
+  }else if(length(destination)==5){
+    fos_table <- tibble("{input$destination}":=destination)
+  }else{
+    fos_table <- tibble(sorry="no data")
+  }
+  fos_table%>%
+    DT::datatable(rownames = FALSE, options=list(dom='t'))
 }
 
-#load the data
+#load the data------------------------
 teer_description <- vroom(here("processed_data","teer_description.csv"), delim =",")
 cip_noc_top5 <- vroom(here("processed_data","cip_noc_top5.csv"))
 wages <- vroom(here("processed_data","wages.csv"))
@@ -146,21 +145,22 @@ Sidebar {.sidebar}
     - Work activities 
 
 ```{r}
+#inputs-------------------------
 selectInput(
   "noc",
   "Choose an origin occupation:",
-  scaled_char$noc,
+  choices = scaled_char$noc,
   selected = "41401: Economists and economic policy researchers and analysts",
   multiple = FALSE
 )
 
 checkboxInput("filter", "Only consider occupations with same or lower education requirements?", FALSE)
 
-renderUI({
+renderUI({#need the renderUI because the list of choices "difference()$noc" is a reactive object
   selectInput('destination', 
               'Choose a destination occupation:', 
-              difference()$noc, 
-              multiple=FALSE
+              choices = difference()$noc, 
+              multiple = FALSE
               )
 })
 ```
