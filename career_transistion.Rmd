@@ -1,0 +1,300 @@
+---
+title: "Career Transition Tool"
+output: 
+  flexdashboard::flex_dashboard:
+    theme:
+      version: 4
+      bg: "white"
+      fg: "black" 
+      primary: "#1f4181"
+      navbar-bg: "#fabc29"
+    source_code: "https://github.com/bcgov/career_transition_proto"
+runtime: shiny
+resource_files:
+- processed_data/cip_noc_top5.csv
+- processed_data/job_openings.csv
+- processed_data/wages.csv
+- processed_data/scaled_characteristics_noc.csv
+- processed_data/teer_description.csv
+---
+
+```{r}
+library(tidyverse)
+library(vroom)
+library(here)
+#functions-----------------------
+teer_table <- function(noc){
+  teer_description%>%
+    filter(teer==str_sub(noc,2,2))%>%
+    select("{noc}":= description)%>%
+    DT::datatable(rownames = FALSE, options = list(dom="t"))
+}
+make_plot <- function(tbbl){
+  temp <- tbbl%>%
+    group_by(category)%>% 
+    mutate(all_category=fct_reorder(all_category, `Need for improvement`, .desc = TRUE))
+ 
+  ggplot(temp, aes(all_category,
+                  `Need for improvement`,
+                  fill=category,
+                  text=subcategory))+
+    geom_col()+
+    labs(y="Need for improvement",
+         x="",
+         fill="")+
+    scale_y_continuous(limits = c(0, NA), labels = NULL)+
+    scale_x_discrete(labels  = NULL) +
+    scale_fill_brewer(palette = "Dark2")+
+    theme_minimal()
+}
+
+make_plotly <- function(plt){ 
+  plotly::ggplotly(plt, tooltip = "text")%>% 
+    plotly::config(displayModeBar = F)
+}
+wage_plot <- function(){
+  wages%>%
+    filter(noc %in% c(input$noc, input$destination))%>%
+    ggplot(mapping = aes(y=noc, 
+                         x = median_wage,
+                         text=paste("The typical hourly wage is", 
+                                    scales::dollar(median_wage),
+                                    "but can be as low as",
+                                    scales::dollar(low_wage),
+                                    "or as high as",
+                                    scales::dollar(high_wage),
+                                     "for <br>",
+                                    str_sub(noc,8,-1)
+                                    ))) +
+    geom_pointrange(mapping = aes(xmin = low_wage, xmax = high_wage))+
+    scale_x_continuous(labels=scales::dollar)+
+    labs(y="", 
+         x="Hourly Wage Rate")+
+    theme_minimal()+ 
+    theme(text = element_text(size = 12))
+}
+jo_plot <- function(num){
+  job_openings%>%
+    filter(noc %in% c(input$noc, input$destination))%>%
+    group_by(noc)%>%
+    mutate(sum_jo=sum(job_openings))%>%
+    ggplot(mapping = aes(year, 
+                         job_openings, 
+                         colour=noc,
+                         text=paste0("Total projected job openings (",
+                                    first_year,
+                                    " to ",
+                                    last_year,
+                                    ") are ",
+                                    scales::comma(sum_jo),
+                                    " for <br>",
+                                    str_sub(noc,8,-1)
+                                    ))) +
+    geom_line()+
+    theme_minimal()+
+    scale_colour_brewer(palette = "Dark2")+
+    theme(legend.position='none')+
+    labs(y="",
+         x="",
+         colour="")+ 
+    theme(text = element_text(size = 17))
+}
+
+fos_table <- function(){
+  origin <- cip_noc_top5%>%
+  filter(noc ==input$noc)%>%
+  ungroup()%>%
+  select(`Field of Study`)%>%
+  pull()
+destination <- cip_noc_top5%>%
+  filter(noc == input$destination)%>%
+  ungroup()%>%
+  select(`Field of Study`)%>%
+  pull()
+if(length(origin)==5 & length(destination)==5){
+  fos_table <- tibble("{input$noc}":=origin, "{input$destination}":=destination)
+}else if(length(origin)==5){
+  fos_table <- tibble("{input$noc}":=origin)
+}else if(length(destination)==5){
+  fos_table <- tibble("{input$destination}":=destination)
+}else{
+  fos_table <- tibble(sorry="no data")
+}
+fos_table%>%
+  DT::datatable(rownames = FALSE, options=list(dom='t'))
+}
+
+#load the data
+teer_description <- vroom(here("processed_data","teer_description.csv"), delim =",")
+cip_noc_top5 <- vroom(here("processed_data","cip_noc_top5.csv"))
+wages <- vroom(here("processed_data","wages.csv"))
+job_openings <- vroom(here("processed_data","job_openings.csv"))
+first_year <- min(job_openings$year)
+last_year <- max(job_openings$year)
+scaled_char <- vroom(here("processed_data","scaled_characteristics_noc.csv"))%>%
+  mutate(teer=as.numeric(str_sub(noc,2,2)), .after=noc)
+```
+
+Sidebar {.sidebar}
+---------------------------------------------
+
+* Choosing an origin occupation in the first dropdown box populates the second dropdown box with ten closest destination occupations.
+* Closeness is based on 161 attributes from 4 categories:
+    - Abilities
+    - Knowledge
+    - Skills
+    - Work activities 
+
+```{r}
+selectInput(
+  "noc",
+  "Choose an origin occupation:",
+  scaled_char$noc,
+  selected = "41401: Economists and economic policy researchers and analysts",
+  multiple = FALSE
+)
+
+checkboxInput("filter", "Only consider occupations with same or lower education requirements?", FALSE)
+
+renderUI({
+  selectInput('destination', 
+              'Choose a destination occupation:', 
+              difference()$noc, 
+              multiple=FALSE
+              )
+})
+```
+
+### Notes:
+
+* A blank plot in the top left indicates a perfect match between the origin and destination occupations in terms of abilities, knowledge, skills and work activities.
+* The top fields of study are not available for 11 occupations.
+
+
+
+```{r}
+#reactive elements----------------
+tbbl <- reactive({
+  if(input$filter==TRUE){
+    scaled_char <- scaled_char%>%
+      filter(teer>=as.numeric(str_sub(input$noc,2,2)))
+  }
+    scaled_char%>%
+      select(-teer)%>%
+      column_to_rownames(var="noc")
+})
+pca <- reactive({
+  prcomp(tbbl())
+})
+first_pca <- reactive({ 
+  pca()[["x"]][,1:5]%>% #keep only the first 5 principal components.
+    as.data.frame()
+})
+
+q <- reactive({
+  first_pca()[rownames(first_pca())==input$noc,] #the location of the chosen NOC in 10D space.
+})
+temp <- reactive({
+  dbscan::kNN(first_pca(), k = 11, sort=TRUE,  query = q()) #11 nearest neighbors to query (own NOC included)
+})
+nn <-  reactive({
+  rownames(first_pca())[as.vector(temp()[["id"]])] #the names of the closest occupations
+})
+distance <- reactive({
+  dist <- tibble(noc=nn(), distance=round(as.vector(temp()[["dist"]]),2))%>%
+    filter(noc==input$destination)%>%
+    pull(distance)
+  dist[[1]]
+})
+chosen_noc <- reactive({
+  tbbl()[rownames(tbbl())==input$noc,] #the skill profile of the chosen NOC (35D)
+})
+repeated_chosen <- reactive({
+  chosen_noc()[rep(1, 11), ] #replicate the skill profile of the chosen NOC
+})
+closest <- reactive({
+  tbbl()[rownames(tbbl()) %in% nn(), ] #the nearest neighbour NOCs to the chosen NOC
+})
+wrong_order_difference <- reactive({
+  (closest()-repeated_chosen())%>% #the difference in skills
+  mutate(across(everything(), \(x) round(x, 2)))%>%
+  rownames_to_column(var="noc")%>%
+  pivot_longer(cols=-noc, names_to = "all_category", values_to = "Need for improvement")%>%
+  mutate(temp=all_category)%>%
+  separate(temp, into = c("category","subcategory"), sep=": ")%>%
+  filter(noc!=input$noc)%>%
+  group_by(noc, category)%>%
+  slice_max(order_by = `Need for improvement`, n = 5, with_ties=FALSE)%>%
+  group_by(noc)%>%
+  nest()%>%
+  mutate(plot=map(data, make_plot),
+         plotly=map(plot, make_plotly)
+         )
+})
+#order the dataframe correctly------------
+difference <- reactive({
+  wrong_order_difference()[match(nn(), wrong_order_difference()$noc), ]%>%
+  na.omit()
+})
+#the pages--------------
+```
+
+Column 
+-------------------------------------
+    
+### **`r renderUI({paste0(input$destination, ", Distance = ", distance())})`**
+    
+
+```{r}
+plotly::renderPlotly({
+  lst <- difference()%>%
+    filter(noc==input$destination)%>%
+    pull(plotly)
+  lst[[1]]
+}) 
+```
+
+### Training, education, experience and responsibilities
+
+```{r}
+DT::renderDT({
+  teer_table(input$noc)
+})
+```
+
+### Training, education, experience and responsibilities
+
+```{r}
+DT::renderDT({
+  teer_table(input$destination)
+})
+```
+
+   
+Column 
+-------------------------------------
+   
+### Comparison of Hourly Wage Rates.
+
+```{r, fig.retina=3}
+plotly::renderPlotly({
+  make_plotly(wage_plot())
+})
+```   
+ 
+### LMO Projected Job Openings for years `r first_year` to `r last_year`.
+    
+```{r, fig.retina=3}
+plotly::renderPlotly({
+  make_plotly(jo_plot())
+})
+```
+
+### Top fields of study: % of workers with background
+
+```{r}
+DT::renderDT({
+  fos_table()
+})
+
+```
