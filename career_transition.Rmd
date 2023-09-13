@@ -4,10 +4,7 @@ output:
   flexdashboard::flex_dashboard:
     theme:
       version: 4
-      bg: "white"
-      fg: "black" 
       primary: "#1f4181"
-      navbar-bg: "#fabc29"
     source_code: "https://github.com/bcgov/career_transition_proto"
 runtime: shiny
 resource_files:
@@ -22,6 +19,7 @@ resource_files:
 library(tidyverse)
 library(vroom)
 library(here)
+
 #functions-----------------------
 teer_table <- function(noc){
   teer_description%>%
@@ -73,32 +71,47 @@ wage_plot <- function(){
     theme_minimal()+ 
     theme(text = element_text(size = 12))
 }
+# jo_plot <- function(num){
+#   job_openings%>%
+#     filter(noc %in% c(input$noc, input$destination))%>%
+#     group_by(noc)%>%
+#     mutate(sum_jo=sum(job_openings))%>%
+#     ggplot(mapping = aes(year, 
+#                          job_openings, 
+#                          colour=noc,
+#                          text=paste0("Total projected job openings (",
+#                                     first_year,
+#                                     " to ",
+#                                     last_year,
+#                                     ") are ",
+#                                     scales::comma(sum_jo),
+#                                     " for <br>",
+#                                     str_sub(noc,8,-1)
+#                                     ))) +
+#     geom_line()+
+#     theme_minimal()+
+#     scale_colour_brewer(palette = "Dark2")+
+#     theme(legend.position='none')+
+#     labs(y="",
+#          x="",
+#          colour="")+ 
+#     theme(text = element_text(size = 17))
+# }
+
 jo_plot <- function(num){
   job_openings%>%
     filter(noc %in% c(input$noc, input$destination))%>%
     group_by(noc)%>%
-    mutate(sum_jo=sum(job_openings))%>%
-    ggplot(mapping = aes(year, 
-                         job_openings, 
-                         colour=noc,
-                         text=paste0("Total projected job openings (",
-                                    first_year,
-                                    " to ",
-                                    last_year,
-                                    ") are ",
-                                    scales::comma(sum_jo),
-                                    " for <br>",
-                                    str_sub(noc,8,-1)
-                                    ))) +
-    geom_line()+
+    summarize(sum_jo=sum(job_openings))%>%
+    ggplot(mapping = aes(sum_jo, noc))+
+    geom_col()+
     theme_minimal()+
-    scale_colour_brewer(palette = "Dark2")+
-    theme(legend.position='none')+
-    labs(y="",
-         x="",
-         colour="")+ 
-    theme(text = element_text(size = 17))
+    labs(x="",
+         y="")+
+    scale_x_continuous(labels = scales::comma)
 }
+
+
 get_fos <- function(noc_code){
   cip_noc_top5%>%
   filter(noc == noc_code)%>%
@@ -134,15 +147,14 @@ scaled_char <- vroom(here("processed_data","scaled_characteristics_noc.csv"))%>%
   mutate(teer=as.numeric(str_sub(noc,2,2)), .after=noc)
 ```
 
-Sidebar {.sidebar}
----------------------------------------------
+## Sidebar {.sidebar}
 
-* Choosing an origin occupation in the first dropdown box populates the second dropdown box with ten closest destination occupations.
-* Closeness is based on 161 attributes from 4 categories:
-    - Abilities
-    - Knowledge
-    - Skills
-    - Work activities 
+-   Choosing an origin occupation in the first dropdown box populates the second dropdown box with ten closest destination occupations.
+-   Closeness is based on 161 attributes from 4 categories:
+    -   Abilities
+    -   Knowledge
+    -   Skills
+    -   Work activities
 
 ```{r}
 #inputs-------------------------
@@ -154,7 +166,7 @@ selectInput(
   multiple = FALSE
 )
 
-checkboxInput("filter", "Only consider occupations with same or lower education requirements?", FALSE)
+checkboxInput("filter", "Only consider occupations with same or lower typical education and experience?", FALSE)
 
 renderUI({#need the renderUI because the list of choices "difference()$noc" is a reactive object
   selectInput('destination', 
@@ -167,10 +179,8 @@ renderUI({#need the renderUI because the list of choices "difference()$noc" is a
 
 ### Notes:
 
-* A blank plot in the top left indicates a perfect match between the origin and destination occupations in terms of abilities, knowledge, skills and work activities.
-* The top fields of study are not available for 11 occupations.
-
-
+-   A blank plot in the top left indicates a perfect match between the origin and destination occupations in terms of abilities, knowledge, skills and work activities.
+-   The top fields of study are not available for 11 occupations.
 
 ```{r}
 #reactive elements----------------
@@ -192,7 +202,7 @@ first_pca <- reactive({
 })
 
 q <- reactive({
-  first_pca()[rownames(first_pca())==input$noc,] #the location of the chosen NOC in 10D space.
+  first_pca()[rownames(first_pca())==input$noc,] #the location of the chosen NOC in 5D space.
 })
 temp <- reactive({
   dbscan::kNN(first_pca(), k = 11, sort=TRUE,  query = q()) #11 nearest neighbors to query (own NOC included)
@@ -200,7 +210,7 @@ temp <- reactive({
 nn <-  reactive({
   rownames(first_pca())[as.vector(temp()[["id"]])] #the names of the closest occupations
 })
-distance <- reactive({
+distance <- reactive({#gets the distance from the origin to the destination noc
   dist <- tibble(noc=nn(), distance=round(as.vector(temp()[["dist"]]),2))%>%
     filter(noc==input$destination)%>%
     pull(distance)
@@ -216,7 +226,7 @@ closest <- reactive({
   tbbl()[rownames(tbbl()) %in% nn(), ] #the nearest neighbour NOCs to the chosen NOC
 })
 wrong_order_difference <- reactive({
-  (closest()-repeated_chosen())%>% #the difference in skills
+  (closest()-repeated_chosen())%>% #the difference in scaled skills
   mutate(across(everything(), \(x) round(x, 2)))%>%
   rownames_to_column(var="noc")%>%
   pivot_longer(cols=-noc, names_to = "all_category", values_to = "Need for improvement")%>%
@@ -236,14 +246,13 @@ difference <- reactive({
   wrong_order_difference()[match(nn(), wrong_order_difference()$noc), ]%>%
   na.omit()
 })
-#the pages--------------
+
+#the page--------------
 ```
 
-Column 
--------------------------------------
-    
+## Column
+
 ### **`r renderUI({paste0(input$destination, ", Distance = ", distance())})`**
-    
 
 ```{r}
 plotly::renderPlotly({
@@ -254,7 +263,7 @@ plotly::renderPlotly({
 }) 
 ```
 
-### Training, education, experience and responsibilities
+### **Origin TEER**
 
 ```{r}
 DT::renderDT({
@@ -262,7 +271,7 @@ DT::renderDT({
 })
 ```
 
-### Training, education, experience and responsibilities
+### **Destination TEER**
 
 ```{r}
 DT::renderDT({
@@ -270,27 +279,25 @@ DT::renderDT({
 })
 ```
 
-   
-Column 
--------------------------------------
-   
-### Comparison of Hourly Wage Rates.
+## Column
+
+### **Comparison of Hourly Wage Rates.**
 
 ```{r, fig.retina=3}
 plotly::renderPlotly({
   make_plotly(wage_plot())
 })
-```   
- 
-### LMO Projected Job Openings for years `r first_year` to `r last_year`.
-    
+```
+
+### **LMO Projected 10 year Job Openings**
+
 ```{r, fig.retina=3}
 plotly::renderPlotly({
   make_plotly(jo_plot())
 })
 ```
 
-### Top fields of study: % of workers with background
+### **Top fields of study: % of workers with background**
 
 ```{r}
 DT::renderDT({
