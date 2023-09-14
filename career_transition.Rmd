@@ -71,40 +71,13 @@ wage_plot <- function(){
     theme_minimal()+ 
     theme(text = element_text(size = 12))
 }
-# jo_plot <- function(num){
-#   job_openings%>%
-#     filter(noc %in% c(input$noc, input$destination))%>%
-#     group_by(noc)%>%
-#     mutate(sum_jo=sum(job_openings))%>%
-#     ggplot(mapping = aes(year, 
-#                          job_openings, 
-#                          colour=noc,
-#                          text=paste0("Total projected job openings (",
-#                                     first_year,
-#                                     " to ",
-#                                     last_year,
-#                                     ") are ",
-#                                     scales::comma(sum_jo),
-#                                     " for <br>",
-#                                     str_sub(noc,8,-1)
-#                                     ))) +
-#     geom_line()+
-#     theme_minimal()+
-#     scale_colour_brewer(palette = "Dark2")+
-#     theme(legend.position='none')+
-#     labs(y="",
-#          x="",
-#          colour="")+ 
-#     theme(text = element_text(size = 17))
-# }
-
 jo_plot <- function(num){
   job_openings%>%
     filter(noc %in% c(input$noc, input$destination))%>%
     group_by(noc)%>%
     summarize(sum_jo=sum(job_openings))%>%
     ggplot(mapping = aes(sum_jo, noc))+
-    geom_col()+
+    geom_col(alpha=.5)+
     theme_minimal()+
     labs(x="",
          y="")+
@@ -231,7 +204,7 @@ wrong_order_difference <- reactive({
   rownames_to_column(var="noc")%>%
   pivot_longer(cols=-noc, names_to = "all_category", values_to = "Need for improvement")%>%
   mutate(temp=all_category)%>%
-  separate(temp, into = c("category","subcategory"), sep=": ")%>%
+  separate(temp, into = c("category", "subcategory"), sep=": ")%>%
   filter(noc!=input$noc)%>%
   group_by(noc, category)%>%
   slice_max(order_by = `Need for improvement`, n = 5, with_ties=FALSE)%>%
