@@ -1,11 +1,11 @@
 ---
 title: "Career Transition Tool"
-output: 
+output:
   flexdashboard::flex_dashboard:
     theme:
       version: 4
-      primary: "#1f4181"
-    source_code: "https://github.com/bcgov/career_transition_proto"
+      primary: '#1f4181'
+    source_code: https://github.com/bcgov/career_transition_proto
 runtime: shiny
 resource_files:
 - processed_data/cip_noc_top5.csv
@@ -13,6 +13,7 @@ resource_files:
 - processed_data/wages.csv
 - processed_data/scaled_characteristics_noc.csv
 - processed_data/teer_description.csv
+- processed_data/unscaled_characteristics_noc.csv
 ---
 
 ```{r}
@@ -108,6 +109,11 @@ fos_table <- function(){
   fos_table%>%
     DT::datatable(rownames = FALSE, options=list(dom='t'))
 }
+reverse_legend_labels <- function(plotly_plot) {
+  n_labels <- length(plotly_plot$x$data)
+  plotly_plot$x$data[1:n_labels] <- plotly_plot$x$data[n_labels:1]
+  plotly_plot
+}
 
 #load the data------------------------
 teer_description <- vroom(here("processed_data","teer_description.csv"), delim =",")
@@ -118,6 +124,8 @@ first_year <- min(job_openings$year)
 last_year <- max(job_openings$year)
 scaled_char <- vroom(here("processed_data","scaled_characteristics_noc.csv"))%>%
   mutate(teer=as.numeric(str_sub(noc,2,2)), .after=noc)
+categories <- unique(str_split_fixed(colnames(scaled_char)[-c(1:2)], pattern = ": ", n=2)[,1])
+unscaled_char <- vroom(here("processed_data","unscaled_characteristics_noc.csv"))
 ```
 
 ## Sidebar {.sidebar}
@@ -141,18 +149,27 @@ selectInput(
 
 checkboxInput("filter", "Only consider occupations with same or lower typical education and experience?", FALSE)
 
-renderUI({#need the renderUI because the list of choices "difference()$noc" is a reactive object
+renderUI({#need the renderUI because the list of choices "nn()" is a reactive object
   selectInput('destination', 
               'Choose a destination occupation:', 
-              choices = difference()$noc, 
+              choices = nn(), 
               multiple = FALSE
               )
 })
+
+selectInput(
+  "category",
+  "Choose what to plot top left:",
+  choices = categories,
+  selected = categories[1],
+  multiple = FALSE
+)
+
+
 ```
 
 ### Notes:
 
--   A blank plot in the top left indicates a perfect match between the origin and destination occupations in terms of abilities, knowledge, skills and work activities.
 -   The top fields of study are not available for 11 occupations.
 
 ```{r}
@@ -166,9 +183,11 @@ tbbl <- reactive({
       select(-teer)%>%
       column_to_rownames(var="noc")
 })
+
 pca <- reactive({
   prcomp(tbbl())
 })
+
 first_pca <- reactive({ 
   pca()[["x"]][,1:5]%>% #keep only the first 5 principal components.
     as.data.frame()
@@ -177,50 +196,33 @@ first_pca <- reactive({
 q <- reactive({
   first_pca()[rownames(first_pca())==input$noc,] #the location of the chosen NOC in 5D space.
 })
-temp <- reactive({
-  dbscan::kNN(first_pca(), k = 11, sort=TRUE,  query = q()) #11 nearest neighbors to query (own NOC included)
-})
-nn <-  reactive({
-  rownames(first_pca())[as.vector(temp()[["id"]])] #the names of the closest occupations
-})
-distance <- reactive({#gets the distance from the origin to the destination noc
-  dist <- tibble(noc=nn(), distance=round(as.vector(temp()[["dist"]]),2))%>%
-    filter(noc==input$destination)%>%
-    pull(distance)
-  dist[[1]]
-})
-chosen_noc <- reactive({
-  tbbl()[rownames(tbbl())==input$noc,] #the skill profile of the chosen NOC (35D)
-})
-repeated_chosen <- reactive({
-  chosen_noc()[rep(1, 11), ] #replicate the skill profile of the chosen NOC
-})
-closest <- reactive({
-  tbbl()[rownames(tbbl()) %in% nn(), ] #the nearest neighbour NOCs to the chosen NOC
-})
-wrong_order_difference <- reactive({
-  (closest()-repeated_chosen())%>% #the difference in scaled skills
-  mutate(across(everything(), \(x) round(x, 2)))%>%
-  rownames_to_column(var="noc")%>%
-  pivot_longer(cols=-noc, names_to = "all_category", values_to = "Need for improvement")%>%
-  mutate(temp=all_category)%>%
-  separate(temp, into = c("category", "subcategory"), sep=": ")%>%
-  filter(noc!=input$noc)%>%
-  group_by(noc, category)%>%
-  slice_max(order_by = `Need for improvement`, n = 5, with_ties=FALSE)%>%
-  group_by(noc)%>%
-  nest()%>%
-  mutate(plot=map(data, make_plot),
-         plotly=map(plot, make_plotly)
-         )
-})
-#order the dataframe correctly------------
-difference <- reactive({
-  wrong_order_difference()[match(nn(), wrong_order_difference()$noc), ]%>%
-  na.omit()
+
+mat <- reactive({
+  first_pca()[rownames(first_pca())!=input$noc,] #matrix of every other occupation
 })
 
-#the page--------------
+temp <- reactive({
+  dbscan::kNN(mat(), k = 10, sort=TRUE,  query = q()) #10 nearest neighbors to query
+})
+nn <-  reactive({
+  rownames(mat())[as.vector(temp()[["id"]])] #the names of the closest occupations
+})
+distance <- reactive({#gets the distance from the origin to the destination noc
+  tibble(noc=nn(), distance=round(as.vector(temp()[["dist"]]), 2))%>%
+    filter(noc==input$destination)%>%
+    pull(distance)
+})
+
+compare <- reactive({
+  unscaled_char[unscaled_char$noc %in% c(input$noc, input$destination),]%>%
+  pivot_longer(cols = -noc)%>%
+  separate(name, c("category", "subcategory"), sep=": ")%>%
+  filter(category==input$category)%>%
+  pivot_wider(names_from = noc, values_from = value)%>%
+  slice_max(get(input$destination), n = 5, with_ties = FALSE)%>%
+  pivot_longer(cols=-c("category","subcategory"), names_to= "noc", values_to = "value")
+})
+
 ```
 
 ## Column
@@ -229,11 +231,21 @@ difference <- reactive({
 
 ```{r}
 plotly::renderPlotly({
-  lst <- difference()%>%
-    filter(noc==input$destination)%>%
-    pull(plotly)
-  lst[[1]]
-}) 
+  plt <- ggplot(compare(), aes(value, fct_reorder(subcategory, value, max), fill=fct_rev(noc)))+
+  geom_col(position = "dodge")+
+  theme_minimal()+
+  labs(x="",
+       y="",
+       fill="")+
+   scale_x_continuous(limits=c(0,7))
+  
+  make_plotly(plt)%>%
+  plotly::layout(legend = list(
+      orientation = "h"
+    )
+  )%>%
+  reverse_legend_labels()
+})
 ```
 
 ### **Origin TEER**
