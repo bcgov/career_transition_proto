@@ -12,8 +12,8 @@ career_transition_proto
 
 Do the following:
 
-source file 01_process.R (gets data into usable form)
-run document file career_transition.Rmd
+- source file 01_process.R (gets data into usable form)
+- run document file career_transition.Rmd
 
 ### Project Status
 
