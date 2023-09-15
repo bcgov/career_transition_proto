@@ -13,14 +13,7 @@ career_transition_proto
 Do the following:
 
 source file 01_process.R (gets data into usable form)
-
-#### Example
-
-This is a basic example which shows you how to solve a common problem:
-
-``` r
-## basic example code
-```
+run document file career_transition.Rmd
 
 ### Project Status
 

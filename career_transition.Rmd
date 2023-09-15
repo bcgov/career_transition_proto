@@ -115,6 +115,8 @@ reverse_legend_labels <- function(plotly_plot) {
   plotly_plot
 }
 
+
+
 #load the data------------------------
 teer_description <- vroom(here("processed_data","teer_description.csv"), delim =",")
 cip_noc_top5 <- vroom(here("processed_data","cip_noc_top5.csv"))
@@ -236,12 +238,20 @@ plotly::renderPlotly({
   theme_minimal()+
   labs(x="",
        y="",
-       fill="")+
+       fill="",
+       title=paste0('<sup>', 
+                    "Top 5 ", input$category, " for ",
+                    str_sub(input$destination, 8),
+                    '</sup>'),
+       )+
    scale_x_continuous(limits=c(0,7))
   
   make_plotly(plt)%>%
-  plotly::layout(legend = list(
-      orientation = "h"
+  plotly::layout(
+    title = list(x=-10),
+    legend = list(
+      orientation = "h",
+      y=-.25
     )
   )%>%
   reverse_legend_labels()
@@ -266,7 +276,7 @@ DT::renderDT({
 
 ## Column
 
-### **Comparison of Hourly Wage Rates.**
+### **Comparison of Hourly Wage Rates. (artificial data until available)**
 
 ```{r, fig.retina=3}
 plotly::renderPlotly({
@@ -274,7 +284,7 @@ plotly::renderPlotly({
 })
 ```
 
-### **LMO Projected 10 year Job Openings**
+### **LMO Projected 10 year Job Openings (artifical data until release)**
 
 ```{r, fig.retina=3}
 plotly::renderPlotly({
