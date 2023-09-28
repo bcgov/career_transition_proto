@@ -22,12 +22,18 @@ library(vroom)
 library(here)
 
 #functions-----------------------
-teer_table <- function(noc){
-  teer_description%>%
-    filter(teer==str_sub(noc,2,2))%>%
-    select("{noc}":= description)%>%
+teer_table2 <- function(noc1, noc2){
+  teer1 <- teer_description$description[teer_description$teer==str_sub(noc1,2,2)]
+  teer2 <- teer_description$description[teer_description$teer==str_sub(noc2,2,2)]
+  max_length=max(length(teer1), length(teer2))
+  teer1 <- teer1[1:max_length]
+  teer2 <- teer2[1:max_length]
+  temp <- bind_cols(teer1,teer2)
+  colnames(temp) <- c(noc1,noc2)
+  temp%>%
     DT::datatable(rownames = FALSE, options = list(dom="t"))
 }
+
 make_plot <- function(tbbl){
   temp <- tbbl%>%
     group_by(category)%>% 
@@ -258,19 +264,11 @@ plotly::renderPlotly({
 })
 ```
 
-### **Origin TEER**
+### **TEER: Training, Education, Experience and Responsibilities**
 
 ```{r}
 DT::renderDT({
-  teer_table(input$noc)
-})
-```
-
-### **Destination TEER**
-
-```{r}
-DT::renderDT({
-  teer_table(input$destination)
+  teer_table2(input$noc, input$destination)
 })
 ```
 
