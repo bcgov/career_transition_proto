@@ -34,25 +34,6 @@ teer_table2 <- function(noc1, noc2){
     DT::datatable(rownames = FALSE, options = list(dom="t"))
 }
 
-make_plot <- function(tbbl){
-  temp <- tbbl%>%
-    group_by(category)%>% 
-    mutate(all_category=fct_reorder(all_category, `Need for improvement`, .desc = TRUE))
- 
-  ggplot(temp, aes(all_category,
-                  `Need for improvement`,
-                  fill=category,
-                  text=subcategory))+
-    geom_col()+
-    labs(y="Need for improvement",
-         x="",
-         fill="")+
-    scale_y_continuous(limits = c(0, NA), labels = NULL)+
-    scale_x_discrete(labels  = NULL) +
-    scale_fill_brewer(palette = "Dark2")+
-    theme_minimal()
-}
-
 make_plotly <- function(plt){ 
   plotly::ggplotly(plt, tooltip = "text")%>% 
     plotly::config(displayModeBar = F)
@@ -60,6 +41,7 @@ make_plotly <- function(plt){
 wage_plot <- function(){
   wages%>%
     filter(noc %in% c(input$noc, input$destination))%>%
+    mutate(noc = factor(noc, levels=c(input$destination, input$noc), ordered = TRUE))%>%
     ggplot(mapping = aes(y=noc, 
                          x = median_wage,
                          text=paste("The typical hourly wage is", 
@@ -81,6 +63,7 @@ wage_plot <- function(){
 jo_plot <- function(num){
   job_openings%>%
     filter(noc %in% c(input$noc, input$destination))%>%
+    mutate(noc = factor(noc, levels=c(input$destination, input$noc), ordered = TRUE))%>%
     group_by(noc)%>%
     summarize(sum_jo=sum(job_openings))%>%
     ggplot(mapping = aes(sum_jo, noc))+
@@ -228,7 +211,8 @@ compare <- reactive({
   filter(category==input$category)%>%
   pivot_wider(names_from = noc, values_from = value)%>%
   slice_max(get(input$destination), n = 5, with_ties = FALSE)%>%
-  pivot_longer(cols=-c("category","subcategory"), names_to= "noc", values_to = "value")
+  pivot_longer(cols=-c("category","subcategory"), names_to= "noc", values_to = "value")%>%
+  mutate(noc = factor(noc, levels=c(input$destination, input$noc), ordered = TRUE))
 })
 
 ```
@@ -239,9 +223,10 @@ compare <- reactive({
 
 ```{r}
 plotly::renderPlotly({
-  plt <- ggplot(compare(), aes(value, fct_reorder(subcategory, value, max), fill=fct_rev(noc)))+
+  plt <- ggplot(compare(), aes(value, fct_reorder(subcategory, value, max), fill=noc))+
   geom_col(position = "dodge")+
   theme_minimal()+
+  scale_fill_brewer(palette="Dark2")+
   labs(x="",
        y="",
        fill="",
