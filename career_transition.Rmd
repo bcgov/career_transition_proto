@@ -223,10 +223,12 @@ compare <- reactive({
 
 ```{r}
 plotly::renderPlotly({
-  plt <- ggplot(compare(), aes(value, fct_reorder(subcategory, value, max), fill=noc))+
-  geom_col(position = "dodge")+
+  plt <- ggplot(compare(), 
+                aes(value, fct_reorder(subcategory, value, mean), 
+                    fill=noc))+
+  geom_col(width = 0.7, position = "dodge")+
   theme_minimal()+
-  scale_fill_brewer(palette="Dark2")+
+  scale_fill_manual(values=c("grey20", "grey85"))+ 
   labs(x="",
        y="",
        fill="",
