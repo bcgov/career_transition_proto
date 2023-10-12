@@ -210,8 +210,9 @@ compare <- reactive({
   separate(name, c("category", "subcategory"), sep=": ")%>%
   filter(category==input$category)%>%
   pivot_wider(names_from = noc, values_from = value)%>%
-  slice_max(get(input$destination), n = 5, with_ties = FALSE)%>%
-  pivot_longer(cols=-c("category","subcategory"), names_to= "noc", values_to = "value")%>%
+  slice_max(order_by=get(input$destination), n = 5, with_ties = FALSE)%>%
+  mutate(subcategory=fct_reorder(subcategory, get(input$destination)))%>%
+  pivot_longer(cols=-c("category", "subcategory"), names_to= "noc", values_to = "value")%>%
   mutate(noc = factor(noc, levels=c(input$destination, input$noc), ordered = TRUE))
 })
 
@@ -224,7 +225,8 @@ compare <- reactive({
 ```{r}
 plotly::renderPlotly({
   plt <- ggplot(compare(), 
-                aes(value, fct_reorder(subcategory, value, mean), 
+                aes(value, 
+                    subcategory, 
                     fill=noc))+
   geom_col(width = 0.7, position = "dodge")+
   theme_minimal()+
