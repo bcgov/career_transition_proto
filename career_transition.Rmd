@@ -20,7 +20,7 @@ resource_files:
 library(tidyverse)
 library(vroom)
 library(here)
-
+library(patchwork)
 #functions-----------------------
 teer_table2 <- function(noc1, noc2){
   teer1 <- teer_description$description[teer_description$teer==str_sub(noc1,2,2)]
@@ -198,11 +198,11 @@ temp <- reactive({
 nn <-  reactive({
   rownames(mat())[as.vector(temp()[["id"]])] #the names of the closest occupations
 })
-distance <- reactive({#gets the distance from the origin to the destination noc
-  tibble(noc=nn(), distance=round(as.vector(temp()[["dist"]]), 2))%>%
-    filter(noc==input$destination)%>%
-    pull(distance)
-})
+# distance <- reactive({#gets the distance from the origin to the destination noc
+#   tibble(noc=nn(), distance=round(as.vector(temp()[["dist"]]), 2))%>%
+#     filter(noc==input$destination)%>%
+#     pull(distance)
+# })
 
 compare <- reactive({
   unscaled_char[unscaled_char$noc %in% c(input$noc, input$destination),]%>%
@@ -213,43 +213,57 @@ compare <- reactive({
   slice_max(order_by=get(input$destination), n = 5, with_ties = FALSE)%>%
   mutate(subcategory=fct_reorder(subcategory, get(input$destination)))%>%
   pivot_longer(cols=-c("category", "subcategory"), names_to= "noc", values_to = "value")%>%
-  mutate(noc = factor(noc, levels=c(input$destination, input$noc), ordered = TRUE))
+  mutate(noc = factor(noc, levels=c(input$noc, input$destination), ordered = TRUE))
+})
+
+diffs <- reactive({
+  compare()|>
+    pivot_wider(names_from = noc, values_from = value)|>
+    mutate(difference=get(input$noc)-get(input$destination),
+           lbl=if_else(difference<0, "Deficit", "Surplus"),
+           lbl=factor(lbl, levels=c("Deficit","Surplus")))
 })
 
 ```
 
 ## Column
 
-### **`r renderUI({paste0(input$destination, ", Distance = ", distance())})`**
+### **`r renderUI({paste0("Top 5 ", input$category, " for ", str_sub(input$destination, 8))})`**
 
 ```{r}
-plotly::renderPlotly({
-  plt <- ggplot(compare(), 
+renderPlot({
+  levels <- ggplot(compare(), 
                 aes(value, 
                     subcategory, 
                     fill=noc))+
   geom_col(width = 0.7, position = "dodge")+
   theme_minimal()+
-  scale_fill_manual(values=c("grey20", "grey85"))+ 
+  scale_fill_manual(values=c("grey85", "grey20"))+ 
   labs(x="",
        y="",
        fill="",
-       title=paste0('<sup>', 
-                    "Top 5 ", input$category, " for ",
-                    str_sub(input$destination, 8),
-                    '</sup>'),
+       title=paste(input$category, "Levels")
        )+
    scale_x_continuous(limits=c(0,7))
+
+diff_plot <- ggplot(diffs(), aes(difference, subcategory, fill=lbl))+
+  geom_col(width=.7)+
+ # coord_cartesian(xlim = c(-4, 4))+
+  scale_fill_manual(values=c("red", "green"), drop = FALSE)+
+  labs(title=paste(input$category, "Differences"),
+       x=NULL,
+       fill=NULL)+
+  theme_minimal()+
+  theme(legend.position="none",
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
   
-  make_plotly(plt)%>%
-  plotly::layout(
-    title = list(x=-10),
-    legend = list(
-      orientation = "h",
-      y=-.25
-    )
-  )%>%
-  reverse_legend_labels()
+
+levels+diff_plot+ 
+  plot_layout(guides = "collect") & 
+  theme(text = element_text(size = 14), legend.position = 'bottom') &
+  guides(fill=guide_legend(nrow=2,byrow=TRUE))
 })
 ```
 
