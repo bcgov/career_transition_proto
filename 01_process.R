@@ -16,7 +16,6 @@ read_data <- function(file_name){
     select(-Importance, -Level)
 }
 
-
 # the program------------------------
 mapping <- read_excel(here("mapping", "onet2019_soc2018_noc2016_noc2021_crosswalk.xlsx"))%>%
   mutate(noc2021=str_pad(noc2021, "left", pad="0", width=5))%>%
@@ -24,6 +23,17 @@ mapping <- read_excel(here("mapping", "onet2019_soc2018_noc2016_noc2021_crosswal
   select(noc, o_net_soc_code = onetsoc2019)%>%
   distinct()
 
+#make some fake wage data-----------
+wages <- tbbl%>%
+  select(noc)%>%
+  mutate(median_wage=round(runif(506, min=20, max=75),2),
+         low_wage=round(runif(1, .7, .9)*median_wage, 2),
+         high_wage=round(runif(1, 1.1, 1.3)*median_wage, 2))
+
+wages%>%
+  write_csv(file=here("processed_data", "wages.csv"))
+
+#the onet data-----------------------------------
 tbbl <- tibble(file=c("Skills.xlsx", "Abilities.xlsx", "Knowledge.xlsx", "Work Activities.xlsx"))%>%
   mutate(data=map(file, read_data))%>%
   select(-file)%>%
@@ -45,17 +55,10 @@ tbbl%>%
   scale()%>%
   as.data.frame()%>%
   rownames_to_column(var="noc")%>%
+  left_join(wages)%>%
+  select(-low_wage,-high_wage)%>%
   write_csv(file=here("processed_data", "scaled_characteristics_noc.csv"))
 
-#make some fake wage data-----------
-wages <- tbbl%>%
-  select(noc)%>%
-  mutate(median_wage=round(runif(506, min=20, max=75),2),
-         low_wage=round(runif(1, .7, .9)*median_wage, 2),
-         high_wage=round(runif(1, 1.1, 1.3)*median_wage, 2))
-
-wages%>%
-  write_csv(file=here("processed_data", "wages.csv"))
 #make some fake job openings data------------------
 
 nocs <- tbbl%>%

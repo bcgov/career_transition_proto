@@ -14,6 +14,7 @@ resource_files:
 - processed_data/scaled_characteristics_noc.csv
 - processed_data/teer_description.csv
 - processed_data/unscaled_characteristics_noc.csv
+- processed_data/scaled_characteristics_noc.csv
 ---
 
 ```{r}
@@ -142,7 +143,7 @@ first_year <- min(job_openings$year)
 last_year <- max(job_openings$year)
 scaled_char <- vroom(here("processed_data","scaled_characteristics_noc.csv"))%>%
   mutate(teer=as.numeric(str_sub(noc,2,2)), .after=noc)
-categories <- unique(str_split_fixed(colnames(scaled_char)[-c(1:2)], pattern = ": ", n=2)[,1])
+categories <- head(unique(str_split_fixed(colnames(scaled_char)[-c(1:2)], pattern = ": ", n=2)[,1]), 4) 
 unscaled_char <- vroom(here("processed_data","unscaled_characteristics_noc.csv"))
 ```
 
@@ -190,17 +191,13 @@ checkboxInput("teer", "Only consider occupations with lower or equal level of tr
 
 sliderInput(
   "wage",
-  "Only consider occupations with median wage higher than:",
+  "Only consider occupations with median wage rate higher than:",
   value=0,
   min = 0,
-  max = 100000,
+  max = 50,
   pre="$",
-  ticks=FALSE
 )
 ```
-
-
-
 
 ```{r}
 #reactive elements----------------
@@ -209,9 +206,10 @@ tbbl <- reactive({
     scaled_char <- scaled_char%>%
       filter(teer>=as.numeric(str_sub(input$noc,2,2)))
   }
-    scaled_char%>%
-      select(-teer)%>%
-      column_to_rownames(var="noc")
+  scaled_char%>%
+    filter(median_wage > input$wage | noc == input$noc)%>% #avoid filtering out origin occupation
+    select(-teer, -median_wage)%>%
+    column_to_rownames(var="noc")
 })
 
 pca <- reactive({
@@ -232,6 +230,7 @@ mat <- reactive({
 })
 
 temp <- reactive({
+  if(nrow(mat())<10) stop('Your wage filter is too strict')
   dbscan::kNN(mat(), k = 10, sort=TRUE,  query = q()) #10 nearest neighbors to query
 })
 nn <-  reactive({
