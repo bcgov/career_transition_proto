@@ -74,7 +74,6 @@ jo_plot <- function(num){
     scale_x_continuous(labels = scales::comma)
 }
 
-
 get_fos <- function(noc_code){
   cip_noc_top5%>%
   filter(noc == noc_code)%>%
@@ -98,13 +97,41 @@ fos_table <- function(){
   fos_table%>%
     DT::datatable(rownames = FALSE, options=list(dom='t'))
 }
-reverse_legend_labels <- function(plotly_plot) {
-  n_labels <- length(plotly_plot$x$data)
-  plotly_plot$x$data[1:n_labels] <- plotly_plot$x$data[n_labels:1]
-  plotly_plot
+
+level_and_diff_plot <- function(levels, diffs){
+  level_plot(levels)+diff_plot(diffs)+ 
+    plot_layout(guides = "collect") & 
+    theme(text = element_text(size = 14), legend.position = 'bottom') &
+    guides(fill=guide_legend(nrow=2,byrow=TRUE))
 }
 
+level_plot <- function(levels){
+  ggplot(levels, aes(value, subcategory, fill=noc))+
+  geom_col(width = 0.7, position = "dodge")+
+  theme_minimal()+
+  scale_fill_manual(values=c("grey85", "grey20"))+ 
+  labs(x="",
+       y="",
+       fill="",
+       title=paste(input$category, "Levels")
+       )+
+   scale_x_continuous(limits=c(0,7))
+}
 
+diff_plot <- function(diffs){
+  ggplot(diffs, aes(difference, subcategory, fill=lbl))+
+  geom_col(width=.7)+
+ # coord_cartesian(xlim = c(-4, 4))+
+  scale_fill_manual(values=c("red", "green"), drop = FALSE)+
+  labs(title=paste(input$category, "Differences"),
+       x=NULL,
+       fill=NULL)+
+  theme_minimal()+
+  theme(legend.position="none",
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+}
 
 #load the data------------------------
 teer_description <- vroom(here("processed_data","teer_description.csv"), delim =",")
@@ -121,33 +148,32 @@ unscaled_char <- vroom(here("processed_data","unscaled_characteristics_noc.csv")
 
 ## Sidebar {.sidebar}
 
--   Choosing an origin occupation in the first dropdown box populates the second dropdown box with ten closest destination occupations.
--   Closeness is based on 161 attributes from 4 categories:
-    -   Abilities
-    -   Knowledge
-    -   Skills
-    -   Work activities
-
 ```{r}
 #inputs-------------------------
 selectInput(
   "noc",
-  "Choose an origin occupation:",
+  "Choose a starting occupation:",
   choices = scaled_char$noc,
   selected = "41401: Economists and economic policy researchers and analysts",
   multiple = FALSE
 )
-
-checkboxInput("filter", "Only consider occupations with same or lower typical education and experience?", FALSE)
-
 renderUI({#need the renderUI because the list of choices "nn()" is a reactive object
   selectInput('destination', 
-              'Choose a destination occupation:', 
+              'Choose an occupation to compare:', 
               choices = nn(), 
               multiple = FALSE
               )
 })
+```
 
+The 10 occupations listed above are the closest to the starting occupation in terms of 161 attributes from 4 categories:
+    
+-   Abilities
+-   Knowledge
+-   Skills
+-   Work activities
+
+```{r}
 selectInput(
   "category",
   "Choose what to plot top left:",
@@ -155,18 +181,31 @@ selectInput(
   selected = categories[1],
   multiple = FALSE
 )
-
-
 ```
 
-### Notes:
+### Filters
 
--   The top fields of study are not available for 11 occupations.
+```{r}
+checkboxInput("teer", "Only consider occupations with lower or equal level of training?", FALSE)
+
+sliderInput(
+  "wage",
+  "Only consider occupations with median wage higher than:",
+  value=0,
+  min = 0,
+  max = 100000,
+  pre="$",
+  ticks=FALSE
+)
+```
+
+
+
 
 ```{r}
 #reactive elements----------------
 tbbl <- reactive({
-  if(input$filter==TRUE){
+  if(input$teer==TRUE){
     scaled_char <- scaled_char%>%
       filter(teer>=as.numeric(str_sub(input$noc,2,2)))
   }
@@ -198,11 +237,6 @@ temp <- reactive({
 nn <-  reactive({
   rownames(mat())[as.vector(temp()[["id"]])] #the names of the closest occupations
 })
-# distance <- reactive({#gets the distance from the origin to the destination noc
-#   tibble(noc=nn(), distance=round(as.vector(temp()[["dist"]]), 2))%>%
-#     filter(noc==input$destination)%>%
-#     pull(distance)
-# })
 
 compare <- reactive({
   unscaled_char[unscaled_char$noc %in% c(input$noc, input$destination),]%>%
@@ -223,47 +257,15 @@ diffs <- reactive({
            lbl=if_else(difference<0, "Deficit", "Surplus"),
            lbl=factor(lbl, levels=c("Deficit","Surplus")))
 })
-
 ```
 
 ## Column
 
 ### **`r renderUI({paste0("Top 5 ", input$category, " for ", str_sub(input$destination, 8))})`**
 
-```{r}
+```{r, fig.retina=3}
 renderPlot({
-  levels <- ggplot(compare(), 
-                aes(value, 
-                    subcategory, 
-                    fill=noc))+
-  geom_col(width = 0.7, position = "dodge")+
-  theme_minimal()+
-  scale_fill_manual(values=c("grey85", "grey20"))+ 
-  labs(x="",
-       y="",
-       fill="",
-       title=paste(input$category, "Levels")
-       )+
-   scale_x_continuous(limits=c(0,7))
-
-diff_plot <- ggplot(diffs(), aes(difference, subcategory, fill=lbl))+
-  geom_col(width=.7)+
- # coord_cartesian(xlim = c(-4, 4))+
-  scale_fill_manual(values=c("red", "green"), drop = FALSE)+
-  labs(title=paste(input$category, "Differences"),
-       x=NULL,
-       fill=NULL)+
-  theme_minimal()+
-  theme(legend.position="none",
-        axis.title.y=element_blank(),
-        axis.text.y=element_blank(),
-        axis.ticks.y=element_blank())
-  
-
-levels+diff_plot+ 
-  plot_layout(guides = "collect") & 
-  theme(text = element_text(size = 14), legend.position = 'bottom') &
-  guides(fill=guide_legend(nrow=2,byrow=TRUE))
+  level_and_diff_plot(compare(), diffs())
 })
 ```
 
