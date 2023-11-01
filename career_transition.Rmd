@@ -2,6 +2,7 @@
 title: "Career Transition Tool"
 output:
   flexdashboard::flex_dashboard:
+    css: style.css
     theme:
       version: 4
       primary: '#1f4181'
@@ -138,6 +139,8 @@ diff_plot <- function(diffs){
 teer_description <- vroom(here("processed_data","teer_description.csv"), delim =",")
 cip_noc_top5 <- vroom(here("processed_data","cip_noc_top5.csv"))
 wages <- vroom(here("processed_data","wages.csv"))
+min_wage <- round(min(wages$median_wage), -1)
+max_wage <- round(quantile(wages$median_wage, probs=.9), -1)
 job_openings <- vroom(here("processed_data","job_openings.csv"))
 first_year <- min(job_openings$year)
 last_year <- max(job_openings$year)
@@ -168,7 +171,7 @@ renderUI({#need the renderUI because the list of choices "nn()" is a reactive ob
 ```
 
 The 10 occupations listed above are the closest to the starting occupation in terms of 161 attributes from 4 categories:
-    
+
 -   Abilities
 -   Knowledge
 -   Skills
@@ -187,14 +190,14 @@ selectInput(
 ### Filters
 
 ```{r}
-checkboxInput("teer", "Only consider occupations with lower or equal level of training?", FALSE)
+checkboxInput("teer", "Disregard occupations that require more education/training?", FALSE)
 
 sliderInput(
   "wage",
   "Only consider occupations with median wage rate higher than:",
-  value=0,
-  min = 0,
-  max = 50,
+  value=min_wage,
+  min = min_wage,
+  max = max_wage,
   pre="$",
 )
 ```
@@ -268,7 +271,7 @@ renderPlot({
 })
 ```
 
-### **TEER: Training, Education, Experience and Responsibilities**
+### **[TEER](https://noc.esdc.gc.ca/Training/TeerCategory): Training, Education, Experience and Responsibilities**
 
 ```{r}
 DT::renderDT({
