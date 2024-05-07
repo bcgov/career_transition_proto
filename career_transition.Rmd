@@ -267,6 +267,8 @@ diffs <- reactive({
 
 ```{r, fig.retina=3}
 renderPlot({
+  req(input$noc)
+  req(input$destination)
   level_and_diff_plot(compare(), diffs())
 })
 ```
@@ -275,6 +277,8 @@ renderPlot({
 
 ```{r}
 DT::renderDT({
+  req(input$noc)
+  req(input$destination)
   teer_table2(input$noc, input$destination)
 })
 ```
@@ -285,6 +289,8 @@ DT::renderDT({
 
 ```{r, fig.retina=3}
 plotly::renderPlotly({
+  req(input$noc)
+  req(input$destination)
   make_plotly(wage_plot())
 })
 ```
@@ -293,6 +299,8 @@ plotly::renderPlotly({
 
 ```{r, fig.retina=3}
 plotly::renderPlotly({
+  req(input$noc)
+  req(input$destination)
   make_plotly(jo_plot())
 })
 ```
@@ -301,6 +309,8 @@ plotly::renderPlotly({
 
 ```{r}
 DT::renderDT({
+  req(input$noc)
+  req(input$destination)
   fos_table()
 })
 
