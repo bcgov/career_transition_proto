@@ -9,7 +9,7 @@ setup_nn <- function(noc, tbbl){
   get_nn(q, tbbl)
 }
 get_nn <- function(q, tbbl){
-  nn <- dbscan::kNN(tbbl, k = 11, sort=TRUE,  query = q)
+  nn <- dbscan::kNN(tbbl, k = 21, sort=TRUE,  query = q)
   tibble(nearest_neighbours = rownames(tbbl)[as.vector(nn[["id"]])],
          distance = as.vector(nn[["dist"]]))
 }
@@ -50,8 +50,56 @@ unrestricted <- data.frame(first_pca)%>%
   unnest(ten_nearest)%>%
   filter(noc!=nearest_neighbours)%>%
   arrange(noc)%>%
-  mutate(noc_teer=str_sub(noc,2,2), .after="noc")%>%
-  mutate(nn_teer=str_sub(nearest_neighbours,2,2), .after="nearest_neighbours")
+  mutate(`Current Occupation TEER`=str_sub(noc,2,2), .after="noc")%>%
+  mutate(`Career Option TEER`=str_sub(nearest_neighbours,2,2), .after="nearest_neighbours")
+
+for_workBC <- unrestricted|>
+  mutate(`Current Occupation`=str_replace_all(noc,": "," - "))|>
+  separate(noc, into = c("Current Occupation (NOC)", "Current Occupation Title"), sep=": ")|>
+  separate(nearest_neighbours, into = c("Career Option (NOC)", "Career Option Title"), sep=": ")|>
+  mutate(similarity=if_else(distance>median(distance), "medium", "high"))|>
+  select(`Current Occupation (NOC)`,
+         `Current Occupation Title`,
+         `Current Occupation`,
+         `Current Occupation TEER`,
+         `Career Option (NOC)`,
+         `Career Option Title`,
+         `Career Option TEER`,
+         distance,
+         similarity)
+
+
+smush <- function(tbbl){
+  tbbl|>
+    pull(description)|>
+    paste(sep="", collapse=" OR ")
+}
+
+teer_description <- read_csv(here("raw_data","teer_description.csv"))|>
+  group_by(teer)|>
+  nest()|>
+  mutate(data=map(data, smush),
+         teer=as.character(teer))
+
+for_workBC_w_teer_description <- for_workBC|>
+  full_join(teer_description, by=c("Current Occupation TEER"="teer"))|>
+  select(-`Current Occupation TEER`)|>
+  rename(`Current Occupation TEER`=data)|>
+  full_join(teer_description, by=c("Career Option TEER"="teer"))|>
+  select(-`Career Option TEER`)|>
+  rename(`Career Option TEER`=data)|>
+  select(`Current Occupation (NOC)`,
+         `Current Occupation Title`,
+         `Current Occupation`,
+         `Current Occupation TEER`,
+         `Career Option (NOC)`,
+         `Career Option Title`,
+         `Career Option TEER`,
+         distance,
+         similarity)
+
+openxlsx::write.xlsx(for_workBC_w_teer_description, here("processed_data", "for_workBC_w_teer_description.xlsx"))
+
 
 write_csv(unrestricted, here("processed_data", "unrestricted_ten_nearest_noc.csv"))
 
