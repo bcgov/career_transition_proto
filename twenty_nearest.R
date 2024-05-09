@@ -75,11 +75,15 @@ smush <- function(tbbl){
     paste(sep="", collapse=" OR ")
 }
 
-teer_description <- read_csv(here("raw_data","teer_description.csv"))|>
-  group_by(teer)|>
-  nest()|>
-  mutate(data=map(data, smush),
-         teer=as.character(teer))
+# teer_description <- read_csv(here("raw_data","teer_description.csv"))|>
+#   group_by(teer)|>
+#   nest()|>
+#   mutate(data=map(data, smush),
+#          teer=as.character(teer))
+
+teer_description <- read_csv(here("raw_data","teer_description_short.csv"))|>
+  mutate(teer=as.character(teer))
+
 
 for_workBC_w_teer_description <- for_workBC|>
   full_join(teer_description, by=c("Current Occupation TEER"="teer"))|>
@@ -98,7 +102,7 @@ for_workBC_w_teer_description <- for_workBC|>
          distance,
          similarity)
 
-openxlsx::write.xlsx(for_workBC_w_teer_description, here("processed_data", "for_workBC_w_teer_description.xlsx"))
+openxlsx::write.xlsx(for_workBC_w_teer_description, here("processed_data", "top_20_closest_w_short_teer.xlsx"))
 
 
 write_csv(unrestricted, here("processed_data", "unrestricted_ten_nearest_noc.csv"))
