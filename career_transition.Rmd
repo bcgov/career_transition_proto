@@ -12,7 +12,6 @@ resource_files:
 - processed_data/cip_noc_top5.csv
 - processed_data/job_openings.csv
 - processed_data/wages.csv
-- processed_data/scaled_characteristics_noc.csv
 - processed_data/teer_description.csv
 - processed_data/unscaled_characteristics_noc.csv
 - processed_data/scaled_characteristics_noc.csv
@@ -23,6 +22,8 @@ library(tidyverse)
 library(vroom)
 library(here)
 library(patchwork)
+library(FNN)
+trunc_at <- 45
 #functions-----------------------
 teer_table2 <- function(noc1, noc2){
   teer1 <- teer_description$description[teer_description$teer==str_sub(noc1,2,2)]
@@ -31,9 +32,12 @@ teer_table2 <- function(noc1, noc2){
   teer1 <- teer1[1:max_length]
   teer2 <- teer2[1:max_length]
   temp <- bind_cols(teer1,teer2)
-  colnames(temp) <- c(noc1,noc2)
-  temp%>%
-    DT::datatable(rownames = FALSE, options = list(dom="t"))
+  colnames(temp) <- c(str_trunc(noc1, trunc_at),str_trunc(noc2, trunc_at))
+  DT::datatable(temp, rownames = FALSE, options = list(dom="t"))|>
+    DT::formatStyle(
+      columns = names(temp),
+      fontSize = paste0(input$font, "px")
+    )
 }
 
 make_plotly <- function(plt){ 
@@ -56,11 +60,12 @@ wage_plot <- function(){
                                     str_sub(noc,8,-1)
                                     ))) +
     geom_pointrange(mapping = aes(xmin = low_wage, xmax = high_wage))+
+    scale_y_discrete(labels = function(x) str_trunc(x, trunc_at)) + 
     scale_x_continuous(labels=scales::dollar)+
     labs(y="", 
          x="Hourly Wage Rate")+
     theme_minimal()+ 
-    theme(text = element_text(size = 12))
+    theme(text = element_text(size = input$font))
 }
 jo_plot <- function(num){
   job_openings%>%
@@ -73,7 +78,10 @@ jo_plot <- function(num){
     theme_minimal()+
     labs(x="",
          y="")+
-    scale_x_continuous(labels = scales::comma)
+    scale_x_continuous(labels = scales::comma)+
+    scale_y_discrete(labels = function(x) str_trunc(x, trunc_at))+
+    theme(text = element_text(size = input$font),
+          axis.text.x = element_text(angle = 45, hjust = 1))
 }
 
 get_fos <- function(noc_code){
@@ -96,34 +104,41 @@ fos_table <- function(){
   }else{
     fos_table <- tibble(sorry="no data")
   }
-  fos_table%>%
-    DT::datatable(rownames = FALSE, options=list(dom='t'))
+  colnames(fos_table) <- c(str_trunc(input$noc, trunc_at),str_trunc(input$destination, trunc_at))
+  DT::datatable(fos_table, rownames = FALSE, options=list(dom='t'))|>
+    DT::formatStyle(
+      columns = names(fos_table),
+      fontSize = paste0(input$font, "px")
+    )
 }
 
 level_and_diff_plot <- function(levels, diffs){
   level_plot(levels)+diff_plot(diffs)+ 
     plot_layout(guides = "collect") & 
-    theme(text = element_text(size = 14), legend.position = 'bottom') &
+    theme(text = element_text(size = input$font), 
+          legend.position = 'bottom') &
     guides(fill=guide_legend(nrow=2,byrow=TRUE))
 }
 
 level_plot <- function(levels){
-  ggplot(levels, aes(value, subcategory, fill=noc))+
-  geom_col(width = 0.7, position = "dodge")+
-  theme_minimal()+
-  scale_fill_manual(values=c("grey85", "grey20"))+ 
-  labs(x="",
-       y="",
-       fill="",
-       title=paste(input$category, "Levels")
-       )+
-   scale_x_continuous(limits=c(0,7))
+  levels|>
+    ggplot(aes(value, subcategory, fill=noc))+
+    geom_col(width = 0.7, position = "dodge")+
+    theme_minimal()+
+    scale_fill_manual(values=c("grey85", "grey20"),
+                      labels = function(x) str_trunc(x, trunc_at)   
+                      )+ 
+    labs(x="",
+         y="",
+         fill="",
+         title=paste(input$category, "Levels")
+         )+
+     scale_x_continuous(limits=c(0,7))
 }
 
 diff_plot <- function(diffs){
   ggplot(diffs, aes(difference, subcategory, fill=lbl))+
   geom_col(width=.7)+
- # coord_cartesian(xlim = c(-4, 4))+
   scale_fill_manual(values=c("red", "green"), drop = FALSE)+
   labs(title=paste(input$category, "Differences"),
        x=NULL,
@@ -139,8 +154,8 @@ diff_plot <- function(diffs){
 teer_description <- vroom(here("processed_data","teer_description.csv"), delim =",")
 cip_noc_top5 <- vroom(here("processed_data","cip_noc_top5.csv"))
 wages <- vroom(here("processed_data","wages.csv"))
-min_wage <- round(min(wages$median_wage), -1)
-max_wage <- round(quantile(wages$median_wage, probs=.9), -1)
+min_wage <- round(min(wages$median_wage, na.rm = TRUE))-1
+max_wage <- round(max(wages$median_wage,na.rm = TRUE)) +1
 job_openings <- vroom(here("processed_data","job_openings.csv"))
 first_year <- min(job_openings$year)
 last_year <- max(job_openings$year)
@@ -170,7 +185,7 @@ renderUI({#need the renderUI because the list of choices "nn()" is a reactive ob
 })
 ```
 
-The 10 occupations listed above are the closest to the starting occupation in terms of 161 attributes from 4 categories:
+The occupations &uarr; are the closest in terms of 161 ONET attributes:
 
 -   Abilities
 -   Knowledge
@@ -184,6 +199,18 @@ selectInput(
   choices = categories,
   selected = categories[1],
   multiple = FALSE
+)
+```
+
+### Appearance
+
+```{r}
+sliderInput(
+  "font",
+  "Set a font size:",
+  value=14,
+  min = 10,
+  max = 20
 )
 ```
 
@@ -234,10 +261,10 @@ mat <- reactive({
 
 temp <- reactive({
   if(nrow(mat())<10) stop('Your wage filter is too strict')
-  dbscan::kNN(mat(), k = 10, sort=TRUE,  query = q()) #10 nearest neighbors to query
+  FNN::get.knnx(mat(), query = q(), k = 10)
 })
 nn <-  reactive({
-  rownames(mat())[as.vector(temp()[["id"]])] #the names of the closest occupations
+  rownames(mat())[as.vector(temp()[["nn.index"]])] #the names of the closest occupations
 })
 
 compare <- reactive({
@@ -263,7 +290,7 @@ diffs <- reactive({
 
 ## Column
 
-### **`r renderUI({paste0("Top 5 ", input$category, " for ", str_sub(input$destination, 8))})`**
+### **`r renderUI({paste0("Top 5 ", input$category, " for ", str_trunc(input$destination, trunc_at))})`**
 
 ```{r, fig.retina=3}
 renderPlot({
@@ -285,7 +312,7 @@ DT::renderDT({
 
 ## Column
 
-### **Comparison of Hourly Wage Rates. (artificial data until available)**
+### **ESDC 2024 Hourly Wage Rates.**
 
 ```{r, fig.retina=3}
 plotly::renderPlotly({
@@ -295,7 +322,7 @@ plotly::renderPlotly({
 })
 ```
 
-### **LMO Projected 10 year Job Openings (artifical data until release)**
+### **LMO 2025 Projected 10 year Job Openings**
 
 ```{r, fig.retina=3}
 plotly::renderPlotly({
