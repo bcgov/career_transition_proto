@@ -9,32 +9,23 @@ read_data <- function(file_name){
     clean_names()%>%
     select(o_net_soc_code, element_name, scale_name, data_value)%>%
     pivot_wider(names_from = scale_name, values_from = data_value)%>%
-    #mutate(score=sqrt(Importance*Level), #geometric mean of importance and level
-    mutate(score=Level,
+    mutate(score=sqrt(Importance*Level), #geometric mean of importance and level
+    #mutate(score=Level,
            category=(str_split(file_name,"\\.")[[1]][1]))%>%
     unite(element_name, category, element_name, sep=": ")%>%
     select(-Importance, -Level)
 }
 
 # the program------------------------
-mapping <- read_excel(here("mapping", "onet2019_soc2018_noc2016_noc2021_crosswalk.xlsx"))%>%
+mapping <- read_excel(here("mapping", "onet2019_soc2018_noc2016_noc2021_crosswalk_consolodated.xlsx"))%>%
   mutate(noc2021=str_pad(noc2021, "left", pad="0", width=5))%>%
   unite(noc, noc2021, noc2021_title, sep=": ")%>%
   select(noc, o_net_soc_code = onetsoc2019)%>%
   distinct()
 
-#make some fake wage data-----------
-wages <- tbbl%>%
-  select(noc)%>%
-  mutate(median_wage=round(runif(506, min=20, max=75),2),
-         low_wage=round(runif(1, .7, .9)*median_wage, 2),
-         high_wage=round(runif(1, 1.1, 1.3)*median_wage, 2))
-
-wages%>%
-  write_csv(file=here("processed_data", "wages.csv"))
-
 #the onet data-----------------------------------
 tbbl <- tibble(file=c("Skills.xlsx", "Abilities.xlsx", "Knowledge.xlsx", "Work Activities.xlsx"))%>%
+#tbbl <- tibble(file=c("Skills.xlsx"))%>%
   mutate(data=map(file, read_data))%>%
   select(-file)%>%
   unnest(data)%>%
@@ -50,6 +41,19 @@ tbbl <- tibble(file=c("Skills.xlsx", "Abilities.xlsx", "Knowledge.xlsx", "Work A
 tbbl%>%
   write_csv(file=here("processed_data", "unscaled_characteristics_noc.csv"))
 
+#wage data-----------
+
+wages <- read_excel("raw_data/2024 ESDC Job Bank Wage Data BC Only.xlsx",
+           sheet = "BC Only 2024")|>
+  clean_names()|>
+  mutate(noc=str_sub(noc, 5))|>
+  select(noc, noc_title, low_wage, median_wage, high_wage)|>
+  mutate(across(contains("wage"),
+                ~ if_else(.x < 5000, .x, .x / 2080)))|>
+  unite(noc, noc, noc_title, sep=": ")
+
+write_csv(wages, file=here("processed_data", "wages.csv"))
+
 tbbl%>%
   column_to_rownames(var="noc")%>%
   scale()%>%
@@ -59,13 +63,18 @@ tbbl%>%
   select(-low_wage,-high_wage)%>%
   write_csv(file=here("processed_data", "scaled_characteristics_noc.csv"))
 
-#make some fake job openings data------------------
+# 10 year job openings data------------------
 
-nocs <- tbbl%>%
-  select(noc)
-year <- 2024:2033
-job_openings <- crossing(nocs, year)%>%
-  mutate(job_openings=round(1000*runif(5060),-1))%>%
+read_csv(here("raw_data", "job_openings.csv"), skip = 3)|>
+  pivot_longer(cols=starts_with("2"), names_to = "year", values_to = "job_openings")|>
+  clean_names()|>
+  filter(industry=="All industries",
+         variable=="Job Openings",
+         geographic_area=="British Columbia",
+         noc!="#T")|>
+  mutate(noc=str_sub(noc, 2))|>
+  select(noc, description, year, job_openings)|>
+  unite(noc, noc, description, sep=": ")|>
   write_csv(file=here("processed_data", "job_openings.csv"))
 
 #get top 5 cip by noc-------------------
@@ -92,17 +101,14 @@ cip_noc_top5 <- cip_long%>%
   unite(`Field of Study`, `Field of Study`, prop, sep=": ")%>%
   select(-count)
 
-correct_names <- nocs%>%
+correct_names <- mapping%>%
+  select(noc)|>
+  distinct()|>
   mutate(dup = noc)%>%
   separate(dup, into=c("code", "description"), sep=":")%>%
   select(-description)%>%
   rename(noc_full=noc,
          noc=code)
-
-#nocs that are missing typical education------------------
-full_join(cip_noc_top5, correct_names, by = join_by(noc))%>%
-  filter(is.na(noc_full))%>%
-  distinct(noc)
 
 #renaming to match the mapping file names
 inner_join(cip_noc_top5, correct_names, by = join_by(noc))%>%
