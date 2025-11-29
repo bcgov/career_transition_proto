@@ -23,7 +23,6 @@ library(vroom)
 library(here)
 library(patchwork)
 library(FNN)
-trunc_at <- 45
 #functions-----------------------
 teer_table2 <- function(noc1, noc2){
   teer1 <- teer_description$description[teer_description$teer==str_sub(noc1,2,2)]
@@ -32,7 +31,7 @@ teer_table2 <- function(noc1, noc2){
   teer1 <- teer1[1:max_length]
   teer2 <- teer2[1:max_length]
   temp <- bind_cols(teer1,teer2)
-  colnames(temp) <- c(str_trunc(noc1, trunc_at),str_trunc(noc2, trunc_at))
+  colnames(temp) <- c(str_trunc(noc1, input$trunc_at),str_trunc(noc2, input$trunc_at))
   DT::datatable(temp, rownames = FALSE, options = list(dom="t"))|>
     DT::formatStyle(
       columns = names(temp),
@@ -60,7 +59,7 @@ wage_plot <- function(){
                                     str_sub(noc,8,-1)
                                     ))) +
     geom_pointrange(mapping = aes(xmin = low_wage, xmax = high_wage))+
-    scale_y_discrete(labels = function(x) str_trunc(x, trunc_at)) + 
+    scale_y_discrete(labels = function(x) str_trunc(x, input$trunc_at)) + 
     scale_x_continuous(labels=scales::dollar)+
     labs(y="", 
          x="Hourly Wage Rate")+
@@ -79,7 +78,7 @@ jo_plot <- function(num){
     labs(x="",
          y="")+
     scale_x_continuous(labels = scales::comma)+
-    scale_y_discrete(labels = function(x) str_trunc(x, trunc_at))+
+    scale_y_discrete(labels = function(x) str_trunc(x, input$trunc_at))+
     theme(text = element_text(size = input$font),
           axis.text.x = element_text(angle = 45, hjust = 1))
 }
@@ -104,7 +103,7 @@ fos_table <- function(){
   }else{
     fos_table <- tibble(sorry="no data")
   }
-  colnames(fos_table) <- c(str_trunc(input$noc, trunc_at),str_trunc(input$destination, trunc_at))
+  colnames(fos_table) <- c(str_trunc(input$noc, input$trunc_at),str_trunc(input$destination, input$trunc_at))
   DT::datatable(fos_table, rownames = FALSE, options=list(dom='t'))|>
     DT::formatStyle(
       columns = names(fos_table),
@@ -126,7 +125,7 @@ level_plot <- function(levels){
     geom_col(width = 0.7, position = "dodge")+
     theme_minimal()+
     scale_fill_manual(values=c("grey85", "grey20"),
-                      labels = function(x) str_trunc(x, trunc_at)   
+                      labels = function(x) str_trunc(x, input$trunc_at)   
                       )+ 
     labs(x="",
          y="",
@@ -176,21 +175,18 @@ selectInput(
   selected = "41401: Economists and economic policy researchers and analysts",
   multiple = FALSE
 )
+
 renderUI({#need the renderUI because the list of choices "nn()" is a reactive object
-  selectInput('destination', 
-              'Choose an occupation to compare:', 
-              choices = nn(), 
+ # req(length(nn()) > 0, "No matching occupations were found. Please adjust your filters.")
+  selectInput('destination',
+              'Choose an occupation to compare:',
+              choices = nn(),
               multiple = FALSE
               )
 })
 ```
 
-The occupations &uarr; are the closest in terms of 161 ONET attributes:
-
--   Abilities
--   Knowledge
--   Skills
--   Work activities
+The occupations above are the closest in terms of 161 ONET attributes (Skills, Abilities, Knowledge, Work activities)
 
 ```{r}
 selectInput(
@@ -202,6 +198,13 @@ selectInput(
 )
 ```
 
+### Filters
+
+```{r}
+checkboxInput("teer", "Disregard lower TEER (i.e. more education) occupations?", FALSE)
+checkboxInput("wage", "Disregard occupations that have a lower median wage?", FALSE)
+```
+
 ### Appearance
 
 ```{r}
@@ -209,35 +212,41 @@ sliderInput(
   "font",
   "Set a font size:",
   value=14,
-  min = 10,
-  max = 20
+  min = 11,
+  max = 22
 )
-```
-
-### Filters
-
-```{r}
-checkboxInput("teer", "Disregard occupations that require more education/training?", FALSE)
 
 sliderInput(
-  "wage",
-  "Only consider occupations with median wage rate higher than:",
-  value=min_wage,
-  min = min_wage,
-  max = max_wage,
-  pre="$",
+  "trunc_at",
+  "Truncate long strings at:",
+  value=20,
+  min = 8,
+  max = 200
 )
+
 ```
+
 
 ```{r}
 #reactive elements----------------
+user_theme <- reactive({
+  theme_minimal(base_size = input$font, base_family = "Arial")
+})
+
+
+#need to replace all the manual themes in the plots....
+
+
 tbbl <- reactive({
   if(input$teer==TRUE){
     scaled_char <- scaled_char%>%
       filter(teer>=as.numeric(str_sub(input$noc,2,2)))
   }
+  if(input$wage==TRUE){
+    scaled_char <- scaled_char|>
+      filter(median_wage>= scaled_char$median_wage[noc==input$noc])
+  }
   scaled_char%>%
-    filter(median_wage > input$wage | noc == input$noc)%>% #avoid filtering out origin occupation
     select(-teer, -median_wage)%>%
     column_to_rownames(var="noc")
 })
@@ -260,7 +269,7 @@ mat <- reactive({
 })
 
 temp <- reactive({
-  if(nrow(mat())<10) stop('Your wage filter is too strict')
+  if(nrow(mat())<10) stop('Filters too strict: no remaining occupations to compare.')
   FNN::get.knnx(mat(), query = q(), k = 10)
 })
 nn <-  reactive({
@@ -290,7 +299,7 @@ diffs <- reactive({
 
 ## Column
 
-### **`r renderUI({paste0("Top 5 ", input$category, " for ", str_trunc(input$destination, trunc_at))})`**
+### **`r renderUI({paste0("Top 5 ", input$category, " for ", str_trunc(input$destination, input$trunc_at))})`**
 
 ```{r, fig.retina=3}
 renderPlot({
